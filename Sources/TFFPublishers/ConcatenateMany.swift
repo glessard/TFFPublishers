@@ -91,7 +91,7 @@ extension ConcatenateMany
       self.subscription = subscription
       let demand = self.demand
       lock.unlock()
-      if demand != .none
+      if demand > 0
       {
         subscription.request(demand)
       }
@@ -101,8 +101,8 @@ extension ConcatenateMany
     {
       let additional = downstream.receive(input)
       lock.lock()
-      demand -= 1
       demand += additional
+      if demand > 0 { demand -= 1 }
       lock.unlock()
       return additional
     }
