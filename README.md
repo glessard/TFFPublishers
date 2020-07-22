@@ -1,4 +1,4 @@
-# TFFPublishers
+# TFFPublishers [![Build Status](https://www.travis-ci.org/glessard/TFFPublishers.svg?branch=main)](https://www.travis-ci.org/glessard/TFFPublishers)
 
 Some Publishers for use with Combine
 
