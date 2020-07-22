@@ -1,6 +1,7 @@
 import XCTest
 import Combine
-@testable import TFFPublishers
+
+import TFFPublishers
 
 enum TestError: Error, Equatable
 {
