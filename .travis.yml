@@ -1,0 +1,12 @@
+os: osx
+
+jobs:
+  include:
+    - osx_image: xcode11.6
+      env: SWIFT=5.2.4
+      
+    - osx_image: xcode12
+      env: SWIFT=5.3.0
+
+script:
+  - swift test -c release
