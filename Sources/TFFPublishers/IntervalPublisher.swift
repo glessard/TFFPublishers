@@ -5,6 +5,8 @@
 import Combine
 import Dispatch
 
+import CurrentQoS
+
 public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publisher
 {
   public typealias Output =  P.Output
@@ -42,13 +44,13 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publish
 extension IntervalPublisher
   where SchedulerType == DispatchQueue
 {
-  public init(publisher: P, qos: DispatchQoS, interval: @escaping (_ previous: Output?, _ current: Output) -> Interval)
+  public init(publisher: P, qos: DispatchQoS = .current, interval: @escaping (_ previous: Output?, _ current: Output) -> Interval)
   {
     let queue = DispatchQueue(label: #function, qos: qos)
     self.init(publisher: publisher, scheduler: queue, interval: interval)
   }
 
-  public init(publisher: P, qos: DispatchQoS, interval: @escaping (_ areEqual: Bool) -> Interval)
+  public init(publisher: P, qos: DispatchQoS = .current, interval: @escaping (_ areEqual: Bool) -> Interval)
     where Output: Equatable
   {
     let queue = DispatchQueue(label: #function, qos: qos)
@@ -79,7 +81,7 @@ public struct FixedIntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Pu
 extension FixedIntervalPublisher
   where SchedulerType == DispatchQueue
 {
-  public init(publisher: P, qos: DispatchQoS, interval: Interval)
+  public init(publisher: P, qos: DispatchQoS = .current, interval: Interval)
   {
     let queue = DispatchQueue(label: #function, qos: qos)
     self.init(publisher: publisher, scheduler: queue, interval: interval)
