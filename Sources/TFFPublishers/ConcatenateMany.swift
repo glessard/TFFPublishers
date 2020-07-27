@@ -40,7 +40,7 @@ extension ConcatenateMany
     private var subscription: Subscription?
     private let downstream: Downstream
 
-    private let lock = Lock()
+    private let lock = Lock.allocate()
     private var demand = Subscribers.Demand.none
 
     fileprivate init(downstream: Downstream, publishers: S)
@@ -50,7 +50,7 @@ extension ConcatenateMany
     }
 
     deinit {
-      lock.clean()
+      lock.deallocate()
     }
 
     fileprivate func initiate()

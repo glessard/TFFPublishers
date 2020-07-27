@@ -38,7 +38,7 @@ extension Repeat
     private var subscription: Subscription?
     private let downstream: Downstream
 
-    private let lock = Lock()
+    private let lock = Lock.allocate()
     private var demand = Subscribers.Demand.none
 
     fileprivate init(downstream: Downstream, publisher: P)
@@ -48,7 +48,7 @@ extension Repeat
     }
 
     deinit {
-      lock.clean()
+      lock.deallocate()
     }
 
     fileprivate func initiate()

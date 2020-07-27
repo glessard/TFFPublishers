@@ -6,30 +6,33 @@
 
 import Darwin
 
-extension UnsafeMutablePointer where Pointee == os_unfair_lock_s
+internal struct Lock
 {
-  init()
+  private let pl: UnsafeMutablePointer<os_unfair_lock_s>
+
+  private init()
   {
-    let lock = Self.allocate(capacity: 1)
-    lock.initialize(to: os_unfair_lock())
-    self = lock
+    pl = UnsafeMutablePointer.allocate(capacity: 1)
   }
 
-  func clean()
+  static func allocate() -> Lock
   {
-    deinitialize(count: 1)
-    deallocate()
+    return Lock()
+  }
+
+  func deallocate()
+  {
+    pl.deinitialize(count: 1)
+    pl.deallocate()
   }
 
   func lock()
   {
-    os_unfair_lock_lock(self)
+    os_unfair_lock_lock(pl)
   }
 
   func unlock()
   {
-    os_unfair_lock_unlock(self)
+    os_unfair_lock_unlock(pl)
   }
 }
-
-typealias Lock = UnsafeMutablePointer<os_unfair_lock_s>
