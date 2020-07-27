@@ -3,6 +3,7 @@
 //  Copyright © 2020 Guillaume Lessard. All rights reserved
 
 import Combine
+import Dispatch
 
 public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publisher
 {
@@ -22,12 +23,36 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publish
     self.interval = interval
   }
 
+  public init(publisher: P, scheduler: SchedulerType, interval: @escaping (_ areEqual: Bool) -> Interval)
+    where Output: Equatable
+  {
+    let c: Comparator = { interval($0 == $1) }
+    self.init(publisher: publisher, scheduler: scheduler, interval: c)
+  }
+
   public func receive<Downstream: Subscriber>(subscriber: Downstream)
     where Downstream.Input == Output, Downstream.Failure == Failure
   {
     let inner = Inner<Downstream, SchedulerType>(downstream: subscriber, scheduler: scheduler, interval: interval)
     subscriber.receive(subscription: inner)
     publisher.subscribe(inner)
+  }
+}
+
+extension IntervalPublisher
+  where SchedulerType == DispatchQueue
+{
+  public init(publisher: P, qos: DispatchQoS, interval: @escaping (_ previous: Output?, _ current: Output) -> Interval)
+  {
+    let queue = DispatchQueue(label: #function, qos: qos)
+    self.init(publisher: publisher, scheduler: queue, interval: interval)
+  }
+
+  public init(publisher: P, qos: DispatchQoS, interval: @escaping (_ areEqual: Bool) -> Interval)
+    where Output: Equatable
+  {
+    let queue = DispatchQueue(label: #function, qos: qos)
+    self.init(publisher: publisher, scheduler: queue, interval: interval)
   }
 }
 
@@ -51,12 +76,13 @@ public struct ConstantIntervalPublisher<P: Publisher, SchedulerType: Scheduler>:
   }
 }
 
-extension IntervalPublisher where Output: Equatable
+extension ConstantIntervalPublisher
+  where SchedulerType == DispatchQueue
 {
-  public init(publisher: P, scheduler: SchedulerType, interval: @escaping (_ areEqual: Bool) -> Interval)
+  public init(publisher: P, qos: DispatchQoS, interval: Interval)
   {
-    let c: Comparator = { interval($0 == $1) }
-    self.init(publisher: publisher, scheduler: scheduler, interval: c)
+    let queue = DispatchQueue(label: #function, qos: qos)
+    self.init(publisher: publisher, scheduler: queue, interval: interval)
   }
 }
 
@@ -75,7 +101,6 @@ extension IntervalPublisher
     private let downstream: Downstream
     private var subscription: Subscription?
 
-    private let lock = Lock.allocate()
     private var demand = Subscribers.Demand.none
     private var previous: Input? = nil
 
@@ -88,39 +113,36 @@ extension IntervalPublisher
 
     deinit {
       subscription?.cancel()
-      lock.deallocate()
     }
 
     // MARK: Subscription stuff
 
-    func request(_ demand: Subscribers.Demand)
+    func request(_ additional: Subscribers.Demand)
     {
-      lock.lock()
-      self.demand += demand
-      let upstream = subscription
-      lock.unlock()
-      upstream?.request(demand)
+      scheduler.schedule {
+        [self] in
+        demand += additional
+        subscription?.request(additional)
+      }
     }
 
     func cancel()
     {
-      lock.lock()
-      demand = .none
-      let upstream = subscription
-      subscription = nil
-      lock.unlock()
-      upstream?.cancel()
+      scheduler.schedule {
+        [self] in
+        demand = .none
+        let upstream = subscription
+        subscription = nil
+        upstream?.cancel()
+      }
     }
 
     // MARK: Subscriber stuff
 
     func receive(subscription: Subscription)
     {
-      lock.lock()
       assert(self.subscription == nil)
       self.subscription = subscription
-      let demand = self.demand
-      lock.unlock()
       if demand > 0
       {
         subscription.request(demand)
@@ -129,15 +151,14 @@ extension IntervalPublisher
 
     func receive(_ input: Input) -> Subscribers.Demand
     {
-      let additional = downstream.receive(input)
-      lock.lock()
-      demand += additional
-      if demand > 0 { demand -= 1 }
-      let upstream = (demand > 0) ? subscription : nil
+      demand += downstream.receive(input)
       let prev = previous
       previous = input
-      lock.unlock()
-      if let upstream = upstream
+
+      guard demand > 0 else { return .none }
+
+      demand -= 1
+      if let upstream = subscription, demand >= 0
       {
         let delay = interval(prev, input)
         scheduler.schedule(after: delay, { upstream.request(.max(1)) })
@@ -147,10 +168,8 @@ extension IntervalPublisher
 
     func receive(completion: Subscribers.Completion<Downstream.Failure>)
     {
-      lock.lock()
       subscription = nil
       demand = .none
-      lock.unlock()
       downstream.receive(completion: completion)
     }
   }
