@@ -1,3 +1,7 @@
+//  ConcatenateMany.swift
+//
+//  Copyright © 2020 Guillaume Lessard. All rights reserved
+
 import Combine
 
 public struct ConcatenateMany<S: Sequence>: Publisher

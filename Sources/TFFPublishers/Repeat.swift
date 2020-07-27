@@ -1,3 +1,7 @@
+//  Repeat.swift
+//
+//  Copyright © 2020 Guillaume Lessard. All rights reserved
+
 import Combine
 
 public struct Repeat<P: Publisher>: Publisher
