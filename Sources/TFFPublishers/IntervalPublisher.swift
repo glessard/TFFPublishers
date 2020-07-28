@@ -15,7 +15,7 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publish
   public typealias Comparator = (Output?, Output) -> Interval
   public typealias Initial = (Output?) -> Interval
 
-  private var publisher: Publishers.ReceiveOn<P, SchedulerType>
+  private var publisher: P
   private var scheduler: SchedulerType
   private var interval: Comparator
   private var initialValue: Output?
@@ -25,7 +25,7 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publish
               interval: @escaping (_ previous: Output?, _ current: Output) -> Interval,
               initialInterval: @escaping (_ initialValue: Output?) -> Interval = { _ in .seconds(0.0) })
   {
-    self.publisher = publisher.receive(on: scheduler)
+    self.publisher = publisher
     self.scheduler = scheduler
     self.interval = interval
     self.initialValue = initialValue
@@ -40,12 +40,13 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publish
   public func receive<Downstream: Subscriber>(subscriber: Downstream)
     where Downstream.Input == Output, Downstream.Failure == Failure
   {
-    let inner = Inner<Downstream, SchedulerType>(downstream: subscriber, scheduler: scheduler,
+    let inner = Inner<Downstream, SchedulerType>(downstream: subscriber,
+                                                 scheduler: scheduler,
                                                  initialValue: initialValue,
                                                  interval: interval,
                                                  initialInterval: initialInterval)
     subscriber.receive(subscription: inner)
-    publisher.subscribe(inner)
+    publisher.receive(on: scheduler).subscribe(inner)
   }
 }
 
@@ -86,6 +87,7 @@ extension IntervalPublisher
 
     private var demand = Subscribers.Demand.none
     private var previous: Input?
+    private var streaming = true
 
     fileprivate init(downstream: Downstream, scheduler: SchedulerType, initialValue: Input?,
                      interval: @escaping Comparator, initialInterval: @escaping Initial)
@@ -105,10 +107,15 @@ extension IntervalPublisher
 
     func request(_ additional: Subscribers.Demand)
     {
+      precondition(additional > 0)
       scheduler.schedule {
         [self] in
         demand += additional
-        subscription?.request(additional)
+        if !streaming
+        {
+          let requested = request(after: initialInterval(previous))
+          if !requested { subscription?.request(.max(1)) }
+        }
       }
     }
 
@@ -123,41 +130,44 @@ extension IntervalPublisher
       }
     }
 
+    // MARK: asynchronous requests
+
+    private func request(after interval: Interval) -> Bool
+    {
+      guard interval > .seconds(0.0) else { return false }
+
+      let onset = scheduler.now.advanced(by: interval)
+      scheduler.schedule(after: onset, { [weak self] in self?.subscription?.request(.max(1)) })
+      return true
+    }
+
     // MARK: Subscriber stuff
 
     func receive(subscription new: Subscription)
     {
       assert(subscription == nil)
       subscription = new
-      if demand > 0
+      streaming = (demand > 0)
+      if streaming
       {
-        let interval = initialInterval(previous)
-        if interval > .seconds(0.0)
-        {
-          let onset = scheduler.now.advanced(by: interval)
-          scheduler.schedule(after: onset, { [weak self] in self?.subscription?.request(.max(1)) })
-        }
-        else
-        {
-          subscription?.request(.max(1))
-        }
+        let requested = request(after: initialInterval(previous))
+        if !requested { subscription?.request(.max(1)) }
       }
     }
 
     func receive(_ input: Input) -> Subscribers.Demand
     {
+      assert(demand > 0)
       demand += downstream.receive(input)
+      demand -= 1
       let prev = previous
       previous = input
 
-      if demand > 0
+      streaming = (demand > 0)
+      if streaming
       {
-        demand -= 1
-        if subscription != nil, demand >= 0
-        {
-          let onset = scheduler.now.advanced(by: interval(prev, input))
-          scheduler.schedule(after: onset, { [weak self] in self?.subscription?.request(.max(1)) })
-        }
+        let requested = request(after: interval(prev, input))
+        if !requested { return .max(1) }
       }
       return .none
     }
