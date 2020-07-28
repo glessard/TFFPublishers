@@ -45,8 +45,8 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publish
                                                  initialValue: initialValue,
                                                  interval: interval,
                                                  initialInterval: initialInterval)
-    subscriber.receive(subscription: inner)
     publisher.receive(on: scheduler).subscribe(inner)
+    subscriber.receive(subscription: inner)
   }
 }
 
@@ -87,7 +87,6 @@ extension IntervalPublisher
 
     private var demand = Subscribers.Demand.none
     private var previous: Input?
-    private var streaming = true
 
     fileprivate init(downstream: Downstream, scheduler: SchedulerType, initialValue: Input?,
                      interval: @escaping Comparator, initialInterval: @escaping Initial)
@@ -107,14 +106,14 @@ extension IntervalPublisher
 
     func request(_ additional: Subscribers.Demand)
     {
-      precondition(additional > 0)
+      assert(additional > 0)
       scheduler.schedule {
         [self] in
         demand += additional
-        if !streaming
+        if let sub = subscription, demand == additional
         {
           let requested = request(after: initialInterval(previous))
-          if !requested { subscription?.request(.max(1)) }
+          if !requested { sub.request(.max(1)) }
         }
       }
     }
@@ -123,10 +122,9 @@ extension IntervalPublisher
     {
       scheduler.schedule {
         [self] in
-        demand = .none
-        let upstream = subscription
+        subscription?.cancel()
         subscription = nil
-        upstream?.cancel()
+        demand = .none
       }
     }
 
@@ -143,15 +141,14 @@ extension IntervalPublisher
 
     // MARK: Subscriber stuff
 
-    func receive(subscription new: Subscription)
+    func receive(subscription sub: Subscription)
     {
       assert(subscription == nil)
-      subscription = new
-      streaming = (demand > 0)
-      if streaming
-      {
+      subscription = sub
+      if demand > 0
+      { // it's not clear that this can actually happen
         let requested = request(after: initialInterval(previous))
-        if !requested { subscription?.request(.max(1)) }
+        if !requested { sub.request(.max(1)) }
       }
     }
 
@@ -163,8 +160,7 @@ extension IntervalPublisher
       let prev = previous
       previous = input
 
-      streaming = (demand > 0)
-      if streaming
+      if demand > 0
       {
         let requested = request(after: interval(prev, input))
         if !requested { return .max(1) }
