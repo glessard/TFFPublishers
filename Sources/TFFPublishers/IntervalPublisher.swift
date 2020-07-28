@@ -13,29 +13,37 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publish
   public typealias Failure = P.Failure
   public typealias Interval = SchedulerType.SchedulerTimeType.Stride
   public typealias Comparator = (Output?, Output) -> Interval
+  public typealias Initial = (Output?) -> Interval
 
   private var publisher: Publishers.ReceiveOn<P, SchedulerType>
   private var scheduler: SchedulerType
   private var interval: Comparator
+  private var initialValue: Output?
+  private var initialInterval: Initial
 
-  public init(publisher: P, scheduler: SchedulerType, interval: @escaping (_ previous: Output?, _ current: Output) -> Interval)
+  public init(publisher: P, scheduler: SchedulerType, initialValue: Output? = nil,
+              interval: @escaping (_ previous: Output?, _ current: Output) -> Interval,
+              initialInterval: @escaping (_ initialValue: Output?) -> Interval = { _ in .seconds(0.0) })
   {
     self.publisher = publisher.receive(on: scheduler)
     self.scheduler = scheduler
     self.interval = interval
+    self.initialValue = initialValue
+    self.initialInterval = initialInterval
   }
 
-  public init(publisher: P, scheduler: SchedulerType, interval: @escaping (_ areEqual: Bool) -> Interval)
-    where Output: Equatable
+  public init(publisher: P, scheduler: SchedulerType, initialValue: Output? = nil, interval: Interval)
   {
-    let c: Comparator = { interval($0 == $1) }
-    self.init(publisher: publisher, scheduler: scheduler, interval: c)
+    self.init(publisher: publisher, scheduler: scheduler, initialValue: initialValue, interval: { _, _ in interval })
   }
 
   public func receive<Downstream: Subscriber>(subscriber: Downstream)
     where Downstream.Input == Output, Downstream.Failure == Failure
   {
-    let inner = Inner<Downstream, SchedulerType>(downstream: subscriber, scheduler: scheduler, interval: interval)
+    let inner = Inner<Downstream, SchedulerType>(downstream: subscriber, scheduler: scheduler,
+                                                 initialValue: initialValue,
+                                                 interval: interval,
+                                                 initialInterval: initialInterval)
     subscriber.receive(subscription: inner)
     publisher.subscribe(inner)
   }
@@ -44,47 +52,18 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publish
 extension IntervalPublisher
   where SchedulerType == DispatchQueue
 {
-  public init(publisher: P, qos: DispatchQoS = .current, interval: @escaping (_ previous: Output?, _ current: Output) -> Interval)
+  public init(publisher: P, qos: DispatchQoS = .current, initialValue: Output? = nil,
+              interval: @escaping (_ previous: Output?, _ current: Output) -> Interval,
+              initialInterval: @escaping (_ initialValue: Output?) -> Interval = { _ in .seconds(0.0) })
   {
     let queue = DispatchQueue(label: #function, qos: qos)
-    self.init(publisher: publisher, scheduler: queue, interval: interval)
+    self.init(publisher: publisher, scheduler: queue, initialValue: initialValue,
+              interval: interval, initialInterval: initialInterval)
   }
 
-  public init(publisher: P, qos: DispatchQoS = .current, interval: @escaping (_ areEqual: Bool) -> Interval)
-    where Output: Equatable
+  public init(publisher: P, qos: DispatchQoS = .current, initialValue: Output? = nil, interval: Interval)
   {
-    let queue = DispatchQueue(label: #function, qos: qos)
-    self.init(publisher: publisher, scheduler: queue, interval: interval)
-  }
-}
-
-public struct FixedIntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publisher
-{
-  public typealias Output =  P.Output
-  public typealias Failure = P.Failure
-  public typealias Interval = SchedulerType.SchedulerTimeType.Stride
-
-  private var publisher: IntervalPublisher<P, SchedulerType>
-
-  public init(publisher: P, scheduler: SchedulerType, interval: Interval)
-  {
-    self.publisher = IntervalPublisher(publisher: publisher, scheduler: scheduler, interval: { _, _ in interval })
-  }
-
-  public func receive<Downstream: Subscriber>(subscriber: Downstream)
-    where Downstream.Input == Output, Downstream.Failure == Failure
-  {
-    publisher.receive(subscriber: subscriber)
-  }
-}
-
-extension FixedIntervalPublisher
-  where SchedulerType == DispatchQueue
-{
-  public init(publisher: P, qos: DispatchQoS = .current, interval: Interval)
-  {
-    let queue = DispatchQueue(label: #function, qos: qos)
-    self.init(publisher: publisher, scheduler: queue, interval: interval)
+    self.init(publisher: publisher, qos: qos, initialValue: initialValue, interval: { _, _ in interval })
   }
 }
 
@@ -96,21 +75,26 @@ extension IntervalPublisher
     typealias Failure = Downstream.Failure
     typealias Interval = SchedulerType.SchedulerTimeType.Stride
     typealias Comparator = (Input?, Input) -> Interval
+    typealias Initial = (Input?) -> Interval
 
-    private let interval: Comparator
     private let scheduler: SchedulerType
+    private let interval: Comparator
+    private let initialInterval: Initial
 
     private let downstream: Downstream
     private var subscription: Subscription?
 
     private var demand = Subscribers.Demand.none
-    private var previous: Input? = nil
+    private var previous: Input?
 
-    fileprivate init(downstream: Downstream, scheduler: SchedulerType, interval: @escaping Comparator)
+    fileprivate init(downstream: Downstream, scheduler: SchedulerType, initialValue: Input?,
+                     interval: @escaping Comparator, initialInterval: @escaping Initial)
     {
       self.downstream = downstream
       self.scheduler = scheduler
+      self.previous = initialValue
       self.interval = interval
+      self.initialInterval = initialInterval
     }
 
     deinit {
@@ -141,13 +125,22 @@ extension IntervalPublisher
 
     // MARK: Subscriber stuff
 
-    func receive(subscription: Subscription)
+    func receive(subscription new: Subscription)
     {
-      assert(self.subscription == nil)
-      self.subscription = subscription
+      assert(subscription == nil)
+      subscription = new
       if demand > 0
       {
-        subscription.request(.max(1))
+        let interval = initialInterval(previous)
+        if interval > .seconds(0.0)
+        {
+          let onset = scheduler.now.advanced(by: interval)
+          scheduler.schedule(after: onset, { [weak self] in self?.subscription?.request(.max(1)) })
+        }
+        else
+        {
+          subscription?.request(.max(1))
+        }
       }
     }
 
@@ -160,10 +153,10 @@ extension IntervalPublisher
       if demand > 0
       {
         demand -= 1
-        if let upstream = subscription, demand >= 0
+        if subscription != nil, demand >= 0
         {
           let onset = scheduler.now.advanced(by: interval(prev, input))
-          scheduler.schedule(after: onset, { upstream.request(.max(1)) })
+          scheduler.schedule(after: onset, { [weak self] in self?.subscription?.request(.max(1)) })
         }
       }
       return .none
