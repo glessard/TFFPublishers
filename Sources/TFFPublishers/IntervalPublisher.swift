@@ -9,7 +9,7 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publish
 {
   public typealias Output =  P.Output
   public typealias Failure = P.Failure
-  public typealias Interval = SchedulerType.SchedulerTimeType
+  public typealias Interval = SchedulerType.SchedulerTimeType.Stride
   public typealias Comparator = (Output?, Output) -> Interval
 
   private var publisher: Publishers.ReceiveOn<P, SchedulerType>
@@ -56,11 +56,11 @@ extension IntervalPublisher
   }
 }
 
-public struct ConstantIntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publisher
+public struct FixedIntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publisher
 {
   public typealias Output =  P.Output
   public typealias Failure = P.Failure
-  public typealias Interval = SchedulerType.SchedulerTimeType
+  public typealias Interval = SchedulerType.SchedulerTimeType.Stride
 
   private var publisher: IntervalPublisher<P, SchedulerType>
 
@@ -76,7 +76,7 @@ public struct ConstantIntervalPublisher<P: Publisher, SchedulerType: Scheduler>:
   }
 }
 
-extension ConstantIntervalPublisher
+extension FixedIntervalPublisher
   where SchedulerType == DispatchQueue
 {
   public init(publisher: P, qos: DispatchQoS, interval: Interval)
@@ -92,7 +92,7 @@ extension IntervalPublisher
   {
     typealias Input =   Downstream.Input
     typealias Failure = Downstream.Failure
-    typealias Interval = SchedulerType.SchedulerTimeType
+    typealias Interval = SchedulerType.SchedulerTimeType.Stride
     typealias Comparator = (Input?, Input) -> Interval
 
     private let interval: Comparator
@@ -160,8 +160,8 @@ extension IntervalPublisher
       demand -= 1
       if let upstream = subscription, demand >= 0
       {
-        let delay = interval(prev, input)
-        scheduler.schedule(after: delay, { upstream.request(.max(1)) })
+        let onset = scheduler.now.advanced(by: interval(prev, input))
+        scheduler.schedule(after: onset, { upstream.request(.max(1)) })
       }
       return .none
     }
