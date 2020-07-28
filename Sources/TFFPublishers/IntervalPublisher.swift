@@ -147,7 +147,7 @@ extension IntervalPublisher
       self.subscription = subscription
       if demand > 0
       {
-        subscription.request(demand)
+        subscription.request(.max(1))
       }
     }
 
@@ -157,13 +157,14 @@ extension IntervalPublisher
       let prev = previous
       previous = input
 
-      guard demand > 0 else { return .none }
-
-      demand -= 1
-      if let upstream = subscription, demand >= 0
+      if demand > 0
       {
-        let onset = scheduler.now.advanced(by: interval(prev, input))
-        scheduler.schedule(after: onset, { upstream.request(.max(1)) })
+        demand -= 1
+        if let upstream = subscription, demand >= 0
+        {
+          let onset = scheduler.now.advanced(by: interval(prev, input))
+          scheduler.schedule(after: onset, { upstream.request(.max(1)) })
+        }
       }
       return .none
     }
