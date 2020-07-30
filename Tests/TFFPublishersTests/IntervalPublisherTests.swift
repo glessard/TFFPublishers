@@ -6,6 +6,7 @@ import TFFPublishers
 
 final class IntervalPublisherTests: XCTestCase
 {
+#if swift(>=5.3)
   func testIntervalPublisher()
   {
     let count = 10
@@ -44,16 +45,22 @@ final class IntervalPublisherTests: XCTestCase
 
   func testIntervalPublisherWithMultipleClosureSyntax()
   {
-    #if swift(>=5.3)
-    let p = IntervalPublisher(publisher: repeatElement(0, count: 10).publisher) { .milliseconds($0 == $1 ? 0 : 1) }
+    var p = IntervalPublisher(publisher: repeatElement(0, count: 10).publisher) { .milliseconds($0 == $1 ? 0 : 1) }
               initialInterval: { _ in .milliseconds(10) }
+
+    p = IntervalPublisher(publisher: repeatElement(0, count: 10).publisher,
+                          interval: { .milliseconds($0 == $1 ? 0 : 1) }) { _ in .milliseconds(10) }
+
+#warning("Remove the following compilation condition after Swift 5.3 \"beta 4\"")
+#if swift(>=5.3.1)
+    p = IntervalPublisher(publisher: repeatElement(0, count: 10).publisher) { .milliseconds($0 == $1 ? 0 : 1) }
+#endif
 
     let e = expectation(description: #function)
     let c = p.sink { _ in e.fulfill() } receiveValue: { _ in }
 
     waitForExpectations(timeout: 0.1)
     c.cancel()
-    #endif
   }
 
   func testIntervalPublisherWithFixedInterval()
@@ -73,4 +80,5 @@ final class IntervalPublisherTests: XCTestCase
     let elapsed = Date().timeIntervalSince(start)
     XCTAssertGreaterThan(elapsed, Double(count*delay)*0.001)
   }
+#endif
 }

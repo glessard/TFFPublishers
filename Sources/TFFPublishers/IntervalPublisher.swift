@@ -7,7 +7,8 @@ import Dispatch
 
 import CurrentQoS
 
-public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publisher
+@available(swift 5.3)
+public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>
 {
   public typealias Output =  P.Output
   public typealias Failure = P.Failure
@@ -36,20 +37,9 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>: Publish
   {
     self.init(publisher: publisher, scheduler: scheduler, initialValue: initialValue, interval: { _, _ in interval })
   }
-
-  public func receive<Downstream: Subscriber>(subscriber: Downstream)
-    where Downstream.Input == Output, Downstream.Failure == Failure
-  {
-    let inner = Inner<Downstream, SchedulerType>(downstream: subscriber,
-                                                 scheduler: scheduler,
-                                                 initialValue: initialValue,
-                                                 interval: interval,
-                                                 initialInterval: initialInterval)
-    publisher.receive(on: scheduler).subscribe(inner)
-    subscriber.receive(subscription: inner)
-  }
 }
 
+#if swift(>=5.3)
 extension IntervalPublisher
   where SchedulerType == DispatchQueue
 {
@@ -68,8 +58,25 @@ extension IntervalPublisher
   }
 }
 
+extension IntervalPublisher: Publisher
+{
+  public func receive<Downstream: Subscriber>(subscriber: Downstream)
+    where Downstream.Input == Output, Downstream.Failure == Failure
+  {
+    let inner = Inner<Downstream, SchedulerType>(downstream: subscriber,
+                                                 scheduler: scheduler,
+                                                 initialValue: initialValue,
+                                                 interval: interval,
+                                                 initialInterval: initialInterval)
+    publisher.receive(on: scheduler).subscribe(inner)
+    subscriber.receive(subscription: inner)
+  }
+}
+
+@available(swift 5.3)
 extension IntervalPublisher
 {
+  @available(swift 5.3)
   fileprivate final class Inner<Downstream: Subscriber, SchedulerType: Scheduler>: Subscriber, Subscription
   {
     typealias Input =   Downstream.Input
@@ -176,3 +183,4 @@ extension IntervalPublisher
     }
   }
 }
+#endif
