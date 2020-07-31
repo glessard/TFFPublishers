@@ -9,11 +9,13 @@ let package = Package(
   products: [
     .library(name: "TFFPublishers", targets: ["TFFPublishers"]),
   ],
-  dependencies: [],
+  dependencies: [
+    .package(url: "https://github.com/glessard/CurrentQoS", from: "1.2.0"),
+  ],
   targets: [
     .target(
       name: "TFFPublishers",
-      dependencies: []),
+      dependencies: ["CurrentQoS"]),
     .testTarget(
       name: "TFFPublishersTests",
       dependencies: ["TFFPublishers"]),
