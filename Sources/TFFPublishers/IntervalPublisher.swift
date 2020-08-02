@@ -132,6 +132,7 @@ extension IntervalPublisher
         subscription?.cancel()
         subscription = nil
         demand = .none
+        downstream.receive(completion: .finished)
       }
     }
 
