@@ -6,13 +6,13 @@ Some Publishers for use with Combine
 Concatenate the outputs of a `Stream` of `Publisher`s.
 
 ```
-public struct ConcatenateMany<S: Sequence>: Publisher
+public struct ConcatenateMany<Publishers: Sequence>: Publisher
   where S.Element: Publisher
 {
-  public typealias Output =  S.Element.Output
-  public typealias Failure = S.Element.Failure
+  public typealias Output =  Publishers.Element.Output
+  public typealias Failure = Publishers.Element.Failure
 
-  public init(publishers: S)
+  public init(publishers: Publishers)
 }
 ```
 
@@ -20,16 +20,45 @@ public struct ConcatenateMany<S: Sequence>: Publisher
 `ConcatenateMany` terminates with error on the first error encountered.
 
 ##### `Repeat`:
-Restart a `Publisher` whenever it ends normally (with `Completion.finished`)
+Re-subscribes to a `Publisher` whenever it ends normally (with `Completion.finished`)
 
 ```
-public struct Repeat<P: Publisher>: Publisher
+public struct Repeat<Upstream: Publisher>: Publisher
 {
-  public typealias Output =  P.Output
-  public typealias Failure = P.Failure
+  public typealias Output =  Upstream.Output
+  public typealias Failure = Upstream.Failure
 
-  public init(publisher: P)
+  public init(publisher: Upstream)
 }
 ```
 
 `Repeat` only terminates with an error or after its `Subscriber` cancels.
+
+##### `IntervalPublisher`:
+Waits for a time interval before requesting the next element from its upstream `Publisher`
+
+```
+public struct IntervalPublisher<Upstream: Publisher, Context: Scheduler>: Publisher
+{
+  public typealias Output =  Upstream.Output
+  public typealias Failure = Upstream.Failure
+  public typealias Interval = Context.SchedulerTimeType.Stride
+
+  public init(publisher: Upstream, scheduler: Context, initialValue: Output? = nil,
+              interval: @escaping (_ previous: Output?, _ current: Output) -> Interval,
+              initialInterval: @escaping(_ initialValue: Output?) -> Interval = { _ in .seconds(0) })
+              
+  public init(publisher: Upstream, scheduler: Context, initialValue: Output? = nil, interval: Interval)
+}
+
+extension IntervalPublisher where Context == DispatchQueue
+{
+  public init(publisher: Upstream, qos: DispatchQoS = default, initialValue: Output? = nil,
+              interval: @escaping (_ previous: Output?, _ current: Output) -> Interval,
+              initialInterval: @escaping(_ initialValue: Output?) -> Interval = { _ in .seconds(0) })
+
+  public init(publisher: Pustream, qos: DispatchQoS = default, initialValue: Output? = nil, interval: Interval)              
+}
+```
+
+All requests to the upstream `Subscription` and deliveries to the downstream `Subscriber` occur on the same `Scheduler`.
