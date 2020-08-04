@@ -8,21 +8,21 @@ import Dispatch
 import CurrentQoS
 
 @available(swift 5.3)
-public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>
+public struct IntervalPublisher<Upstream: Publisher, Context: Scheduler>
 {
-  public typealias Output =  P.Output
-  public typealias Failure = P.Failure
-  public typealias Interval = SchedulerType.SchedulerTimeType.Stride
+  public typealias Output =  Upstream.Output
+  public typealias Failure = Upstream.Failure
+  public typealias Interval = Context.SchedulerTimeType.Stride
   public typealias Comparator = (Output?, Output) -> Interval
   public typealias Initial = (Output?) -> Interval
 
-  private var publisher: P
-  private var scheduler: SchedulerType
+  private var publisher: Upstream
+  private var scheduler: Context
   private var interval: Comparator
   private var initialValue: Output?
   private var initialInterval: Initial
 
-  public init(publisher: P, scheduler: SchedulerType, initialValue: Output? = nil,
+  public init(publisher: Upstream, scheduler: Context, initialValue: Output? = nil,
               interval: @escaping (_ previous: Output?, _ current: Output) -> Interval,
               initialInterval: @escaping (_ initialValue: Output?) -> Interval = { _ in .seconds(0.0) })
   {
@@ -33,7 +33,7 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>
     self.initialInterval = initialInterval
   }
 
-  public init(publisher: P, scheduler: SchedulerType, initialValue: Output? = nil, interval: Interval)
+  public init(publisher: Upstream, scheduler: Context, initialValue: Output? = nil, interval: Interval)
   {
     self.init(publisher: publisher, scheduler: scheduler, initialValue: initialValue, interval: { _, _ in interval })
   }
@@ -41,9 +41,9 @@ public struct IntervalPublisher<P: Publisher, SchedulerType: Scheduler>
 
 #if swift(>=5.3)
 extension IntervalPublisher
-  where SchedulerType == DispatchQueue
+  where Context == DispatchQueue
 {
-  public init(publisher: P, qos: DispatchQoS = .current, initialValue: Output? = nil,
+  public init(publisher: Upstream, qos: DispatchQoS = .current, initialValue: Output? = nil,
               interval: @escaping (_ previous: Output?, _ current: Output) -> Interval,
               initialInterval: @escaping (_ initialValue: Output?) -> Interval = { _ in .seconds(0.0) })
   {
@@ -52,7 +52,7 @@ extension IntervalPublisher
               interval: interval, initialInterval: initialInterval)
   }
 
-  public init(publisher: P, qos: DispatchQoS = .current, initialValue: Output? = nil, interval: Interval)
+  public init(publisher: Upstream, qos: DispatchQoS = .current, initialValue: Output? = nil, interval: Interval)
   {
     self.init(publisher: publisher, qos: qos, initialValue: initialValue, interval: { _, _ in interval })
   }
@@ -63,11 +63,11 @@ extension IntervalPublisher: Publisher
   public func receive<Downstream: Subscriber>(subscriber: Downstream)
     where Downstream.Input == Output, Downstream.Failure == Failure
   {
-    let inner = Inner<Downstream, SchedulerType>(downstream: subscriber,
-                                                 scheduler: scheduler,
-                                                 initialValue: initialValue,
-                                                 interval: interval,
-                                                 initialInterval: initialInterval)
+    let inner = Inner<Downstream, Context>(downstream: subscriber,
+                                           scheduler: scheduler,
+                                           initialValue: initialValue,
+                                           interval: interval,
+                                           initialInterval: initialInterval)
     publisher.receive(on: scheduler).subscribe(inner)
     subscriber.receive(subscription: inner)
   }
@@ -77,15 +77,15 @@ extension IntervalPublisher: Publisher
 extension IntervalPublisher
 {
   @available(swift 5.3)
-  fileprivate final class Inner<Downstream: Subscriber, SchedulerType: Scheduler>: Subscriber, Subscription
+  fileprivate final class Inner<Downstream: Subscriber, Context: Scheduler>: Subscriber, Subscription
   {
     typealias Input =   Downstream.Input
     typealias Failure = Downstream.Failure
-    typealias Interval = SchedulerType.SchedulerTimeType.Stride
+    typealias Interval = Context.SchedulerTimeType.Stride
     typealias Comparator = (Input?, Input) -> Interval
     typealias Initial = (Input?) -> Interval
 
-    private let scheduler: SchedulerType
+    private let scheduler: Context
     private let interval: Comparator
     private let initialInterval: Initial
 
@@ -95,7 +95,7 @@ extension IntervalPublisher
     private var demand = Subscribers.Demand.none
     private var previous: Input?
 
-    fileprivate init(downstream: Downstream, scheduler: SchedulerType, initialValue: Input?,
+    fileprivate init(downstream: Downstream, scheduler: Context, initialValue: Input?,
                      interval: @escaping Comparator, initialInterval: @escaping Initial)
     {
       self.downstream = downstream
