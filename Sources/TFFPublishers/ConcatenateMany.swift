@@ -4,15 +4,15 @@
 
 import Combine
 
-public struct ConcatenateMany<S: Sequence>: Publisher
-  where S.Element: Publisher
+public struct ConcatenateMany<Publishers: Sequence>: Publisher
+  where Publishers.Element: Publisher
 {
-  public typealias Output =  S.Element.Output
-  public typealias Failure = S.Element.Failure
+  public typealias Output =  Publishers.Element.Output
+  public typealias Failure = Publishers.Element.Failure
 
-  private let publishers: S
+  private let publishers: Publishers
 
-  public init(publishers: S)
+  public init(publishers: Publishers)
   {
     self.publishers = publishers
   }
@@ -28,14 +28,14 @@ public struct ConcatenateMany<S: Sequence>: Publisher
 
 extension ConcatenateMany
 {
-  fileprivate final class Inner<Downstream: Subscriber, S: Sequence>: Subscriber, Subscription
-    where S.Element: Publisher, S.Element.Output == Downstream.Input, S.Element.Failure == Downstream.Failure
+  fileprivate final class Inner<Downstream: Subscriber, Publishers: Sequence>: Subscriber, Subscription
+    where Publishers.Element: Publisher, Publishers.Element.Output == Downstream.Input, Publishers.Element.Failure == Downstream.Failure
   {
     typealias Input = Downstream.Input
     typealias Failure = Downstream.Failure
 
-    private var publishers: S.Iterator
-    private var current: S.Element?
+    private var publishers: Publishers.Iterator
+    private var current: Publishers.Element?
 
     private var subscription: Subscription?
     private let downstream: Downstream
@@ -43,7 +43,7 @@ extension ConcatenateMany
     private let lock = Lock.allocate()
     private var demand = Subscribers.Demand.none
 
-    fileprivate init(downstream: Downstream, publishers: S)
+    fileprivate init(downstream: Downstream, publishers: Publishers)
     {
       self.publishers = publishers.makeIterator()
       self.downstream = downstream

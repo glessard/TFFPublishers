@@ -4,14 +4,14 @@
 
 import Combine
 
-public struct Repeat<P: Publisher>: Publisher
+public struct Repeat<Upstream: Publisher>: Publisher
 {
-  public typealias Output =  P.Output
-  public typealias Failure = P.Failure
+  public typealias Output =  Upstream.Output
+  public typealias Failure = Upstream.Failure
 
-  private let source: P
+  private let source: Upstream
 
-  public init(publisher: P)
+  public init(publisher: Upstream)
   {
     self.source = publisher
   }
@@ -27,13 +27,13 @@ public struct Repeat<P: Publisher>: Publisher
 
 extension Repeat
 {
-  fileprivate final class Inner<Downstream: Subscriber, P: Publisher>: Subscriber, Subscription
-    where P.Output == Downstream.Input, P.Failure == Downstream.Failure
+  fileprivate final class Inner<Downstream: Subscriber, Upstream: Publisher>: Subscriber, Subscription
+    where Upstream.Output == Downstream.Input, Upstream.Failure == Downstream.Failure
   {
     typealias Input = Downstream.Input
     typealias Failure = Downstream.Failure
 
-    private let source: P
+    private let source: Upstream
 
     private var subscription: Subscription?
     private let downstream: Downstream
@@ -41,7 +41,7 @@ extension Repeat
     private let lock = Lock.allocate()
     private var demand = Subscribers.Demand.none
 
-    fileprivate init(downstream: Downstream, publisher: P)
+    fileprivate init(downstream: Downstream, publisher: Upstream)
     {
       self.source = publisher
       self.downstream = downstream
