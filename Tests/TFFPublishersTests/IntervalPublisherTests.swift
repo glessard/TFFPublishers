@@ -51,7 +51,7 @@ final class IntervalPublisherTests: XCTestCase
     p = IntervalPublisher(publisher: repeatElement(0, count: 10).publisher,
                           interval: { .milliseconds($0 == $1 ? 0 : 1) }) { _ in .milliseconds(10) }
 
-#warning("Remove the following compilation condition after Swift 5.3 \"beta 4\"")
+#warning("Remove the following compilation condition after Swift 5.3 \"beta 5\"")
 #if swift(>=5.3.1)
     p = IntervalPublisher(publisher: repeatElement(0, count: 10).publisher) { .milliseconds($0 == $1 ? 0 : 1) }
 #endif
