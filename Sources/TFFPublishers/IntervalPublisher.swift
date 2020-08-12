@@ -24,7 +24,7 @@ public struct IntervalPublisher<Upstream: Publisher, Context: Scheduler>
 
   public init(publisher: Upstream, scheduler: Context, initialValue: Output? = nil,
               interval: @escaping (_ previous: Output?, _ current: Output) -> Interval,
-              initialInterval: @escaping (_ initialValue: Output?) -> Interval = { _ in .seconds(0.0) })
+              initialInterval: @escaping (_ initialValue: Output?) -> Interval = { _ in .seconds(0) })
   {
     self.publisher = publisher
     self.scheduler = scheduler
@@ -45,7 +45,7 @@ extension IntervalPublisher
 {
   public init(publisher: Upstream, qos: DispatchQoS = .current, initialValue: Output? = nil,
               interval: @escaping (_ previous: Output?, _ current: Output) -> Interval,
-              initialInterval: @escaping (_ initialValue: Output?) -> Interval = { _ in .seconds(0.0) })
+              initialInterval: @escaping (_ initialValue: Output?) -> Interval = { _ in .seconds(0) })
   {
     let queue = DispatchQueue(label: #function, qos: qos)
     self.init(publisher: publisher, scheduler: queue, initialValue: initialValue,
